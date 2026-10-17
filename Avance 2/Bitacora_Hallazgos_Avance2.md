@@ -293,7 +293,7 @@ Nivel viaje [VERIF-PY, no en Celonis]: correlación Spend_CO2e vs CO2 calculado 
 
 ---
 
-## 2b. Dashboard — "Dashboard – Huella de carbono de viajes" (Celonis) — 🔄 EN CURSO (17-oct-2026)
+## 2b. Dashboard — "Dashboard – Huella de carbono de viajes" (Celonis) — ✅ CERRADO (17-oct-2026)
 
 **Fila 1 — 4 Single KPI [CELONIS], verificados [VERIF-PY]:**
 | Título | Fórmula | Valor |
@@ -308,14 +308,73 @@ Nivel viaje [VERIF-PY, no en Celonis]: correlación Spend_CO2e vs CO2 calculado 
 - "CO2 de transporte por modo": dimensión SHIPPINGTYPEDESCRIPTION ("Modo de transporte"), KPI `SUM(DEPARTURE_CO2E + RETURN_CO2E) / GLOBAL(SUM(DEPARTURE_CO2E + RETURN_CO2E))`. Business 49.06%, Economy 46.07%, First 4.19%, resto <1% (coincide con Q3 del Avance 1). [VERIF-PY: la suma Departure+Return de los 99,925 tramos = 226,715,208.63 = Transportation_CO2e total.]
 - "% de viajes vs. % del CO2 por región": dimensión "Región de salida", KPIs % del CO2 total y % de viajes (barras agrupadas, no apiladas). Mensaje: Oceanía 32.62% de viajes → 50.43% del CO2; Europa 13.86% → 2.26%; Norteamérica 14.52% → 7.88%.
 
-**Fila 3 (pendiente):** "CO2 promedio por viaje según anticipación" (dimensión Anticipación de Q8) + Dropdown de BUSINESSUNIT (opcional, para mostrar que es herramienta de monitoreo, P3).
+**Fila 3 — Column chart a todo el ancho "CO2 promedio y % fuera de política según anticipación":** dimensión "Anticipación" (Q8); KPIs CO2 promedio (kg/viaje) y % fuera de política. Valores CO2: 2,218 / 2,998 / 2,800 / 2,677 / 2,675 / 2,753 (coinciden con Q8).
+✅ Corregido (17-oct): "% fuera de política" ahora en eje secundario (0–100%) a la derecha.
+Opcionales no hechos: Dropdown de BUSINESSUNIT (interactividad, P3); "% de viajes" en gris en el gráfico de regiones.
 
-**Capturas:** `capturas/Dashboard_01_filas1y2_provisional.png` (filas 1–2, falta fila 3).
+**Captura FINAL:** `capturas/Dashboard_FINAL.png` (versión corregida, sin filtros). `Dashboard_01_filas1y2_provisional.png` queda obsoleta.
+**Captura de interactividad:** `capturas/Dashboard_ejemplo_filtro_7a14dias.png` — dashboard filtrado por Anticipación = "3. 7 a 14 días" (13% de los viajes): 30,986 t CO2e, 2,800 kg/viaje, 44.84% fuera de política y 78.32% del CO2 de esa franja generado por viajes fuera de política [CELONIS]. Control: 11,067 × 2,800 ≈ 30.99 M kg ✔. Útil para la presentación (P3, monitoreo).
+---
+
+### Conformidad del proceso (nuevo, process mining) — ✅ CERRADA en Celonis (17-oct-2026); se integra a Q8 / P2
+
+**Regla de conformidad [ENUNCIADO / diccionario]:** "Submit Request" debe ocurrir después de "Book Mode of Transportation".
+**Hipótesis HC [EQUIPO]:** el proceso respeta el orden reserva → solicitud → aprobación, y cualquier cambio de transporte posterior a la aprobación vuelve a pasar por aprobación.
+
+**Herramienta:** Celonis — hoja "Conformidad del proceso", dos OLAP Tables con los KPIs: Casos, % de viajes, % fuera de política, CO2 promedio, Costo promedio, Mediana horas hasta aprobación.
+- Dimensión "Regla del diccionario": `CASE WHEN PU_FIRST(trip, EVENTTIMESTAMP, EVENTNAME = 'Submit Travel Request') < PU_FIRST(trip, EVENTTIMESTAMP, EVENTNAME = 'Book Mode of Transportation') THEN 'Viola: solicitud antes de reservar' ELSE 'Cumple' END`
+- Dimensión "Re-reserva": `CASE WHEN PU_LAST(trip, EVENTTIMESTAMP, EVENTNAME = 'Book Mode of Transportation') > PU_FIRST(trip, EVENTTIMESTAMP, EVENTNAME = 'Travel Request Approved') THEN 'Re-reserva sin nueva aprobación' ELSE 'Sin re-reserva posterior' END`
+
+**Resultados [CELONIS], verificados [VERIF-PY]:**
+| Grupo | Casos | % de viajes | % fuera de política | CO2 prom. (kg/viaje) | Costo prom. (USD) | Mediana horas hasta aprobación |
+|---|---|---|---|---|---|---|
+| Cumple | 86,582 | 99.46% | 17.99% | 2,683 | 2,772 | 3.53 |
+| Viola: solicitud antes de reservar | 471 | 0.54% | 100.00% | 1,946 | 2,414 | 0.58 |
+| Re-reserva sin nueva aprobación | 3,504 | 4.03% | 28.45% | 2,537 | 2,664 | 1.22 |
+| Sin re-reserva posterior | 83,549 | 95.97% | 18.01% | 2,685 | 2,774 | 3.52 |
+
+Contexto [VERIF-PY, no en Celonis]: en los 471 casos que violan la regla, la aprobación ocurrió en mediana ~22.5 h ANTES de la reserva del transporte. Cada caso tiene exactamente 1 Submit Travel Request y como máximo 1 Travel Request Approved → ninguna re-reserva tuvo segunda aprobación. Las re-reservas posteriores a la aprobación vienen sobre todo de Flight Cancellation (1,070 casos), Missed Flight (947), Rental Cancellation (494), Missed Pickup (387).
+
+**Respuesta [EQUIPO, basada en CELONIS]:** HC se rechaza. (1) 471 viajes (0.54%) violan la regla del diccionario: la solicitud se envió y aprobó antes de reservar el transporte; el 100% de estos viajes está fuera de política. (2) 3,504 viajes (4.03%) cambiaron su reserva después de aprobados sin pasar por una nueva aprobación; en este grupo el % fuera de política sube a 28.45% (vs 18.01%). Ambos son huecos de control: la aprobación no valida lo que finalmente se reserva. Vínculo: P2 (reglas automáticas: bloquear aprobación sin reserva asociada; re-validar política y CO2 al cambiar la reserva) y P3 (registrar estas excepciones como indicadores de conformidad).
+
+**Captura FINAL:** `capturas/Conformidad_FINAL_hoja_2tablas.png`. `Conformidad_provisional_titulo_repetido.png` queda obsoleta.
 
 ---
 
 ### Q1 — ✅ Resuelta en Avance 1 (se reutiliza; ver EntregaAvance1.pdf pp. 14–15)
-### Q3 — ✅ Resuelta en Avance 1 (se reutiliza; ver EntregaAvance1.pdf p. 17)
+### Q3 — ¿Qué rutas y modos son quick wins frente a inversiones a largo plazo? — ✅ Avance 1 (modos) + ✅ Celonis rutas (17-oct-2026)
+
+Base del Avance 1 (Excel): vuelos 94,087 tramos (94.16%) y 99.33% del CO2 de transporte; Business + First 29.33% de tramos y 53.25% del CO2 (Business 49.06%, First 4.19%). Corrección: First Class = 1,639 tramos = 1.64% (en la Figura 7 del Avance 1 decía 1.84%).
+
+**Nuevo en Celonis — hoja "Q3 – Rutas con alternativa terrestre", tabla "Q3 · Vuelo vs. tren en la misma ruta" [CELONIS], verificada [VERIF-PY]:**
+- Dimensión "Ruta": `CONCAT("transportations_data_with_emissions"."DEPARTURELOCATIONCITY", ' → ', "transportations_data_with_emissions"."ARRIVALLOCATIONCITY")` (60 rutas)
+- KPIs (todos por tramo): Tramos en vuelo `SUM(CASE WHEN ...SHIPPINGTYPEDESCRIPTION LIKE '%Flight' THEN 1 ELSE 0 END)`; Tramos en tren (= 'Train'); CO2 prom. vuelo Economy (kg, DEPARTURE_CO2E); CO2 prom. tren (kg); % vuelos en Business (Business / vuelos); CO2 total en vuelos (kg, DEPARTURE+RETURN).
+
+| Ruta | Tramos vuelo | Tramos tren | CO2 prom. Economy (kg) | CO2 prom. tren (kg) | % vuelos Business | CO2 total vuelos (kg) |
+|---|---|---|---|---|---|---|
+| Berlin → Amsterdam | 814 | 1,007 | 88 | 27 | 17.69% | 155,852 |
+| Berlin → Paris | 1,323 | 474 | 131 | 28 | 43.84% | 426,295 |
+| Berlin → Madrid | 3,830 | 336 | 274 | 67 | 37.00% | 2,516,685 |
+| Hamburg → Paris | 451 | 256 | 113 | 25 | 21.73% | 112,691 |
+| Hamburg → Berlin | 0 | 161 | – | 8 | – | 0 |
+| Frankfurt → Berlin | 49 | 84 | 113 | 14 | 0.00% | 11,094 |
+| London → Paris | 0 | 73 | – | 20 | – | 0 |
+| Fukuoka → Tokyo | 298 | 65 | 131 | 22 | 13.42% | 83,097 |
+| Berlin → London | 1,483 | 60 | 143 | 50 | 66.89% | 574,831 |
+| Frankfurt → Paris | 0 | 47 | – | 18 | – | 0 |
+| New York → Toronto | 2,320 | 27 | 83 | 68 | 78.53% | 542,660 |
+| Madrid → Lisbon | 340 | 14 | 76 | 17 | 17.65% | 56,265 |
+| Sydney → Perth | 1,663 | 3 | 486 | 163 | 21.77% | 1,794,181 |
+(El resto de las 60 rutas tiene 0 tramos en tren; p. ej. Beijing → Moscow 4,476 vuelos y 12,387,541 kg; Beijing → New York 95.43% Business.)
+
+**Lectura [EQUIPO]:**
+- En 13 rutas la empresa ya usa tren; en 3 (Hamburg → Berlin, London → Paris, Frankfurt → Paris) se viaja SOLO en tren → prueba interna de que la alternativa es viable.
+- En la misma ruta, el tren emite 3 a 8 veces menos que un vuelo Economy en Europa y Japón (Berlin → Paris 28 vs 131 kg; Frankfurt → Berlin 14 vs 113; Fukuoka → Tokyo 22 vs 131); en New York → Toronto solo 68 vs 83 kg.
+- Rutas cortas con mucho Business: Berlin → London 66.89%, New York → Toronto 78.53% → quick win de CLASE además de modo.
+- Escenario [EQUIPO — cálculo propio sobre cifras de Celonis, supuesto: todo vuelo de la ruta pasa a tren con el CO2 promedio del tren, ida y vuelta]: rutas cortas con tren ya usado (Berlin → Amsterdam, Berlin → Paris, Hamburg → Paris, Frankfurt → Berlin, Fukuoka → Tokyo, Berlin → London, Madrid → Lisbon) → ahorro ≈ 1.1 M kg CO2e ≈ 0.47% del total. Se excluyen Berlin → Madrid, New York → Toronto y Sydney → Perth por distancia (tren de muchas horas / días).
+- Conclusión de priorización: el tren es un quick win visible y fácil, pero pequeño (~0.5%); la palanca grande es la clase del vuelo (techo de 7.49% en Q4). Largo plazo: rutas intercontinentales (Oceanía, Beijing).
+
+**Captura FINAL:** `capturas/Q3_FINAL_vuelo_vs_tren_por_ruta.png`
 ### Q2 — ¿Cómo se comparan las regiones en eficiencia de carbono por viaje y cuál ofrece mayor potencial de reducción? — ✅ CERRADA en Celonis (16-oct-2026); pendiente benchmarking externo
 
 **Ajuste respecto al Avance 1 [EQUIPO]:** en el Avance 1 se contaron tramos por país de LLEGADA (Figura 6, solo conteos). En el Avance 2 la región se asigna por país de SALIDA, porque: (1) en los datos solo hay 9 países y 10 ciudades de salida (Sydney, São Paulo, Beijing, Berlín, Hamburgo, Nueva York, Ciudad de México, Ciudad del Cabo, Madrid, Fukuoka) [VERIF-PY], que representan las sedes desde donde se reserva y aprueba el viaje; (2) el enunciado pregunta por "our North American processes compare to Europe and Asia" [ENUNCIADO], es decir, por el proceso de cada sede; (3) por llegada (20 países) la región refleja el destino (clientes/conferencias), que la empresa no controla. Además se mide CO2e real, no solo conteos.
@@ -365,11 +424,18 @@ Contexto de destinos [VERIF-PY, no está en Celonis; reproducir si se va a citar
 - Oceanía es la región con MAYOR POTENCIAL ABSOLUTO: 32.62% de los viajes pero 50.43% del CO2 (4,142 kg/viaje) por la distancia (viajes intercontinentales). Ahí la palanca es de largo plazo: reducir/consolidar viajes, reuniones virtuales, priorizar Economy en vuelos largos (P1, P3).
 - La hipótesis de "mayor volumen = mayor potencial" se cumple en Oceanía, pero no es lineal: Latinoamérica (22.44% de viajes) emite proporcional a su volumen.
 
-**Pendiente:** benchmarking con la industria tech [ENUNCIADO: "How does this compare to others in the tech industry"] → buscar reportes públicos de emisiones por viajes de negocio de empresas tech (fuente externa, citar).
+**Pendiente (asignado a un compañero del equipo, no a Kendal):** benchmarking con la industria tech [ENUNCIADO: "How does this compare to others in the tech industry"] → buscar reportes públicos de emisiones por viajes de negocio de empresas tech (fuente externa, citar).
 
 **Captura FINAL:** `capturas/Q2_FINAL_hoja_2tablas.png` (encabezado corregido; tabla 1 ordenada por Casos; tabla 2 en orden alfabético). `Q2_01_regiones_provisional.png` queda obsoleta.
 
 ---
+
+## 2c. Punto de partida para el benchmarking (lo hace un compañero) — fuentes públicas encontradas el 17-oct, SIN revisar a fondo
+- Salesforce, Scope 3 cat. 6 "Business travel": 148 mil t CO2e (FY2025), 145 mil (FY2024), 129 mil (FY2019 base). https://www.salesforce.com/en-us/wp-content/uploads/sites/4/documents/white-papers/fy25-schedules-of-environmental-and-employee-metrics.pdf
+- SAP, "Category 6 - Business Travel": 108,100 t CO2e (2024), 82,600 (2023); "Business flights" 101,200 (2024). https://www.sap.com/integrated-reports/2024/en/datahub/environmental-data.html
+- Microsoft, "Category 6 – Business Travel": 260,000 t CO2e (FY24), 133,000 (FY23), 329,356 (FY20). https://cdn-dynmedia-1.microsoft.com/is/content/microsoftcorp/microsoft/msc/documents/presentations/CSR/2025-Microsoft-Environmental-Data-Fact-Sheet-PDF.pdf
+- Nuestro caso: 233,211 t CO2e en el período del log (dic-2023 a jun-2025, ~19 meses) → para comparar hay que anualizar y, idealmente, normalizar por empleado o por ingresos (los reportes no siempre dan headcount). Ojo: el caso es adaptado/ficticio.
+- Celonis tiene metas aprobadas por SBTi (ver celonis.com/news/article/science-based-targets-initiative-approves-celonis-near-term-emission-reduction-targets) — no se llegó a leer.
 
 ## 3. Pistas para próximos bloques — [VERIF-PY], NO citar hasta reproducir en Celonis/Excel
 
